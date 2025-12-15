@@ -63,7 +63,7 @@ def calculate_total_forces(nodes, members):
         Fy_eq = Fy_udl * L / 2
         
         # --- Add loads in global direction ---
-        m.node_start.F_xtotal += Fx_eq
-        m.node_start.F_ytotal += Fy_eq
-        m.node_end.F_xtotal += Fx_eq
-        m.node_end.F_ytotal += Fy_eq
+        m.node_start().F_xtotal += Fx_eq
+        m.node_start().F_ytotal += Fy_eq
+        m.node_end().F_xtotal += Fx_eq
+        m.node_end().F_ytotal += Fy_eq

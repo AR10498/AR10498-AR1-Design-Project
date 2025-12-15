@@ -10,7 +10,7 @@ import pandas as pd
 #############################
 #   GEOMETRY EXTRACTION
 #############################
-def extract_structure_from_dxf(file_path, units='mm', tol=1e-3, visualize=False):
+def extract_structure_from_dxf(file_path, units='mm', tol=1e-3):
     """
     Extracts nodes and members from a DXF, merges nodes within a tolerance, 
     and optionally visualizes merged/conflicted nodes.
@@ -75,45 +75,24 @@ def extract_structure_from_dxf(file_path, units='mm', tol=1e-3, visualize=False)
     #print(np.array(merged_nodes))
     nodes_tmp = {i: Node(i, tuple(coord)) for i, coord in enumerate(merged_nodes)}
 
+    # Reindex nodes by label 
+    nodes = {n.label: n for n in nodes_tmp.values()}
+
     # Create Members 
     members = {}
     for i, (start, end) in enumerate(lines_m):
         # Match start & end to nearest merged nodes
         start_node = min(nodes_tmp.values(), key=lambda n: np.linalg.norm(np.array(n.coords[:2]) - np.array(start[:2])))
         end_node = min(nodes_tmp.values(), key=lambda n: np.linalg.norm(np.array(n.coords[:2]) - np.array(end[:2])))
-        m = Member(i, start_node, end_node)
+        startlabel = start_node.label
+        endlabel = end_node.label
+        m = Member(i, nodes, startlabel, endlabel)
         members[m.name] = m
-
-    # Visualization 
-    if visualize:
-        fig, ax = plt.subplots(figsize=(8, 6))
-        # Plot all DXF lines
-        for (s, e) in lines_m:
-            ax.plot([s[0], e[0]], [s[1], e[1]], color='gray', lw=0.7)
-        # Plot merged nodes
-        ax.scatter([n.coords[0] for n in nodes_tmp.values()],
-                   [n.coords[1] for n in nodes_tmp.values()],
-                   color='blue', s=10, label='Merged Nodes')
-        # Plot conflicts with circles
-        for grp in conflict_groups:
-            mean_pt = np.mean(grp, axis=0)
-            circle = plt.Circle((mean_pt[0], mean_pt[1]), tol, color='red', fill=False, lw=1)
-            ax.add_patch(circle)
-            ax.scatter(grp[:, 0], grp[:, 1], color='red', s=8, label='_nolegend_')
-        ax.set_aspect('equal', 'box')
-        ax.set_title("Merged Node Visualization")
-        ax.legend()
-        plt.xlabel("X [m]")
-        plt.ylabel("Y [m]")
-        plt.show()
-
-    # Reindex nodes by label 
-    nodes = {n.label: n for n in nodes_tmp.values()}
 
     # Build connectivity
     for m in members.values():
-        n1 = m.node_start.label
-        n2 = m.node_end.label
+        n1 = m.node_start().label
+        n2 = m.node_end().label
         nodes[n1].connectivity.append(n2)
         nodes[n2].connectivity.append(n1)  # undirected connection
 
@@ -135,8 +114,8 @@ def read_materials_from_excel(file_path, print_contents=True):
     normalized = {}
     for c in df.columns:
         cl = c.strip().lower()
-        if "material" in cl:
-            normalized[c] = "Material"
+        if "label" in cl:
+            normalized[c] = "Label"
         #!!! potential issue if any other column heading starts with the letter e or E !!!
         elif "e" == cl:
             normalized[c] = "E"
@@ -153,8 +132,8 @@ def read_materials_from_excel(file_path, print_contents=True):
     df = df.rename(columns=normalized)
     
     # require Material column
-    if "Material" not in df.columns:
-        raise ValueError("Excel file must contain a 'Material' column (header contains 'Material').")
+    if "Label" not in df.columns:
+        raise ValueError("Excel file must contain a 'Label' column (header contains 'Label').")
     
     # Ensure the standard columns exist
     for std in ("E", "fc", "ft", "Density"):
@@ -166,10 +145,10 @@ def read_materials_from_excel(file_path, print_contents=True):
         df[std] = pd.to_numeric(df[std], errors="coerce").fillna(0.0).astype(float)
     
     # Trim material names and convert to string
-    df["Material"] = df["Material"].astype(str).str.strip()
+    df["Label"] = df["Label"].astype(str).str.strip()
     
     # transform to enable simple lookup
-    df.set_index('Material', inplace=True)
+    df.set_index('Label', inplace=True)
     df = df.transpose()
     if print_contents:
         print("\n<= Imported Materials (normalized):\n")
@@ -181,10 +160,16 @@ def read_materials_from_excel(file_path, print_contents=True):
 ############
 #   EXPORT
 ############
-def export_to_dxf(nodes, members, filename="output.dxf"):
+def export_to_dxf(nodes, members, filename="output.dxf", units='mm'):
+    M_TO_MM = 1000.0  # millimeters to meters
+
+    factor = M_TO_MM if units.lower() == 'mm' else 1.0
+    
     doc = ezdxf.new(dxfversion="R2010")
     msp = doc.modelspace()
     for m in members.values():
-        msp.add_line(m.node_start.coords[:2], m.node_end.coords[:2])
+        x1,y1 = m.node_start().coords[:2]
+        x2,y2 = m.node_end().coords[:2]
+        msp.add_line([x1*factor, y1*factor], [x2*factor, y2*factor])
     doc.saveas(filename)
     print(f"=> DXF exported to {filename}")

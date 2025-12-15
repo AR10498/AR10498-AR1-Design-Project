@@ -14,7 +14,7 @@ def reset_reactions_and_loads(nodes):
         n.Rx = 0.0
         n.Ry = 0.0
 
-def compute_support_reactions(nodes, members=None, verbose=True):
+def compute_support_reactions(nodes, verbose=True):
     """
     Compute 2D support reactions satisfying ΣFx=0, ΣFy=0, ΣM=0.
     Solves moment equilibrium first.
@@ -61,7 +61,8 @@ def compute_support_reactions(nodes, members=None, verbose=True):
         Fy = n.F_ytotal
         x, y = n.coords[:2]
         dx, dy = x - x_ref, y - y_ref
-        M_loads += dx * Fy + dy * Fx
+        Mz = dx * Fy + dy * Fx
+        M_loads += Mz
 
     # --- Step 6: Build unknowns only for restrained directions ---
     unknowns = []
@@ -157,8 +158,8 @@ def solve_truss_joint_iteration(nodes, members, tol_length=1e-12, max_iter=100):
     # Map node labels to connected members
     node_connections = {n.label: [] for n in nodes.values()}
     for m in members.values():
-        node_connections[m.node_start.label].append(m)
-        node_connections[m.node_end.label].append(m)
+        node_connections[m.node_start().label].append(m)
+        node_connections[m.node_end().label].append(m)
 
     # Total forces at nodes = point loads + UDLs + reactions
     node_forces = {}
@@ -179,7 +180,7 @@ def solve_truss_joint_iteration(nodes, members, tol_length=1e-12, max_iter=100):
 
             # Helper: unit direction vector from node along member
             def dir_cos(m):
-                other = m.node_end if m.node_start.label == n_label else m.node_start
+                other = m.node_end() if m.node_start().label == n_label else m.node_start()
                 dx = other.coords[0] - node.coords[0]
                 dy = other.coords[1] - node.coords[1]
                 L = math.hypot(dx, dy)

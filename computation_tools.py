@@ -7,11 +7,11 @@ import math
 def compute_member_lengths(members):
     lengths = {}
     for m in members.values():
-        dx = m.node_end.coords[0] - m.node_start.coords[0]
-        dy = m.node_end.coords[1] - m.node_start.coords[1]
-        L = math.hypot(dx, dy)
-        if L < 1e-12:
-            L = 0.0
+        #dx = m.node_end.coords[0] - m.node_start.coords[0]
+        #dy = m.node_end.coords[1] - m.node_start.coords[1]
+        L = m.compute_length() #math.hypot(dx, dy)
+        #if L < 1e-12:
+        #    L = 0.0
         lengths[m.name] = L
     return lengths
 
@@ -19,7 +19,7 @@ def compute_member_lengths(members):
 def compute_node_angles(nodes, members):
     node_angles = {}
     for n in nodes.values():
-        connected = [m for m in members.values() if n in (m.node_start, m.node_end)]
+        connected = [m for m in members.values() if n in (m.node_start(), m.node_end())]
         if len(connected) < 2:
             continue
         node_angles[n.label] = []
