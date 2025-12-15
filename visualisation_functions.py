@@ -7,24 +7,19 @@ import matplotlib.cm as cm
 def visualize_truss(
     nodes,
     members,
-    stresses=None,
-    utilisations=None,
-    max_stress=None,
     max_util=None,
     textscale=1.0,
-    reactions=None,
+    show_reactions=False,
     plot_loads=False,
-    forces=None,
-    moments=None,
     show_stresses=False,
     show_utilisations=False,
-    show_moments=False,
+    show_bending_moments=False,
     show_forces=False,
     show_reaction_labels=True,
     show_node_labels=False,
     show_member_labels=False,
     show_force_labels=False,
-    show_moment_labels=False,
+    show_bending_moment_labels=False,
     show_stress_labels=False,
     show_material_labels=False,
     show_load_labels=False,
@@ -46,7 +41,7 @@ def visualize_truss(
         "Reaction_Fixed": ("s", "k", "k"),
         "Reaction_Pinned": ("o", "k", "k"),
         "Reaction_Roller_H": ("^", "k", "k"),
-        "Reaction_Roller_V": ("v", "k", "k")
+        "Reaction_Roller_V": (">", "k", "k")
     }
 
     fig, ax = plt.subplots(figsize=(8, 8))
@@ -61,23 +56,11 @@ def visualize_truss(
     head_length = 0.25 * arrow_len
     text_offset = 0.03 * span / len(nodes)
 
-    # --- Stress colormap setup ---
-
-        # --- Ensure stresses/utilisations are dict-like ---
-    if stresses is not None and not isinstance(stresses, dict):
-        try:
-            stresses = {m.name: s for m, s in zip(members.values(), stresses)}
-        except Exception:
-            stresses = {}
-
-    if utilisations is not None and not isinstance(utilisations, dict):
-        try:
-            utilisations = {m.name: u for m, u in zip(members.values(), utilisations)}
-        except Exception:
-            utilisations = {}
-    
-    stress_cmap, stress_norm = None, None
-    if show_stresses and stresses:
+    if show_stresses:
+        stresses = {m.name: m.stress for m in members.values()}
+        
+        # --- Stress colormap setup ---
+        stress_cmap, stress_norm = None, None
         #vmax = max(stresses.values())
         vmax = max(abs(max(stresses.values())), abs(min(stresses.values())))
         vmin = -vmax #
@@ -85,13 +68,15 @@ def visualize_truss(
         stress_norm = mcolors.Normalize(vmin=vmin, vmax=vmax)
         stress_cmap = mcolors.LinearSegmentedColormap.from_list(
             "stressmap", [(0.0, "darkred"), (0.5, "lightgrey"), (1.0, "darkblue")]
-        )
+        )    
 
-    # --- Utilisation colormap setup ---
-    util_cmap, util_norm = None, None
-    util_colors = {}
-    if show_utilisations and utilisations:
-        if max_util is None:
+    if show_utilisations:
+        utilisations = {m.name: m.utilisation for m in members.values()}
+
+        # --- Utilisation colormap setup ---
+        util_cmap, util_norm = None, None
+        util_colors = {}
+        if max_util==None:
             max_util = max(utilisations.values())
         util_cap = max(1.5, max_util)
         util_norm = mcolors.Normalize(vmin=0, vmax=util_cap)
@@ -100,18 +85,18 @@ def visualize_truss(
 
     # --- Draw members and labels ---
     for m in members.values():
-        x1, y1 = m.node_start.coords[:2]
-        x2, y2 = m.node_end.coords[:2]
+        x1, y1 = m.node_start().coords[:2]
+        x2, y2 = m.node_end().coords[:2]
 
         # Base color for member
         col = "grey"
-        if forces and not show_stresses:
-            F = forces.get(m.name, 0.0)
+        if show_forces and not show_stresses:
+            F = m.force
             if F > 1e-6: col="blue"
             elif F < -1e-6: col="red"
        
         # Stress coloring
-        if show_stresses and stresses and stress_cmap:
+        if show_stresses:
             sigma = stresses.get(m.name, 0.0)
             col = stress_cmap(stress_norm(sigma))
 
@@ -128,15 +113,15 @@ def visualize_truss(
         label = ""
         if show_member_labels: label += f"{m.name}"
         if show_material_labels and hasattr(m,"material") and m.material is not None:
-            label += f"\nMat: {m.material}"
-        if show_force_labels and forces and m.name in forces:
-            F_val = forces[m.name]
+            label += f"\n{m.material}"
+        if show_force_labels:
+            F_val = m.force
             if abs(F_val) > 1e-6:
-                label += f"\nF = {forces[m.name]:.1f}"
-        if show_moment_labels and moments and m.name in moments:
-            M_val = moments[m.name].get('M_max',0.0)
+                label += f"\nF = {m.force:.1f}"
+        if show_bending_moment_labels:
+            M_val = max(abs(m.moments['M_max']), abs(m.moments['M_min']))
             if abs(M_val) > 1e-6:            
-                label += f"\nM = {moments[m.name].get('M_max',0.0):.1f}"
+                label += f"\nM = {M_val:.1f}"
         if show_stress_labels and stresses and m.name in stresses:
             sigma_val = stresses[m.name]
             if abs(sigma_val) > 1e-6:
@@ -146,16 +131,16 @@ def visualize_truss(
                     label, rotation=30 ,fontsize=9*textscale, ha="center", va="center", color="purple")
 
     # --- Draw bending moment curves separately ---
-    if show_moments and moments:
+    if show_bending_moments:
         for m in members.values():
-            if m.name not in moments: continue
-            M_curve = np.array(moments[m.name]['points'])
-            sx = np.sign(moments[m.name]['Fx_udl']) #positive to right
-            sy = -np.sign(moments[m.name]['Fy_udl']) #positive down
+            moments = m.moments
+            M_curve = np.array(moments['points'])
+            sx = 1 #positive to right
+            sy = -1 #positive down
             if np.allclose(M_curve,0.0): continue
 
-            x1, y1 = m.node_start.coords[:2]
-            x2, y2 = m.node_end.coords[:2]
+            x1, y1 = m.node_start().coords[:2]
+            x2, y2 = m.node_end().coords[:2]
             dx, dy = abs(x2-x1), abs(y2-y1)
             L = math.hypot(dx,dy)
             if L < 1e-9: continue
@@ -173,6 +158,12 @@ def visualize_truss(
     for n in nodes.values():
         marker, edge, face = mapping.get(n.condition,("o","b","none"))
         ax.plot(n.coords[0], n.coords[1], marker=marker, markeredgecolor=edge, markerfacecolor=face, markersize=8)
+        if n.condition=='Reaction_Roller_H':
+            ax.plot(n.coords[0]-0.015, n.coords[1]-0.03, marker='o', markeredgecolor=edge, markerfacecolor=face, markersize=3)
+            ax.plot(n.coords[0]+0.015, n.coords[1]-0.03, marker='o', markeredgecolor=edge, markerfacecolor=face, markersize=3)
+        if n.condition=='Reaction_Roller_V':
+            ax.plot(n.coords[0]-0.03, n.coords[1]+0.01, marker='o', markeredgecolor=edge, markerfacecolor=face, markersize=3)
+            ax.plot(n.coords[0]-0.03, n.coords[1]-0.01, marker='o', markeredgecolor=edge, markerfacecolor=face, markersize=3)
         if show_node_labels:
             ax.text(n.coords[0]+0.02, n.coords[1]+0.02, n.label,
                     fontsize=10*textscale, weight="bold")
@@ -194,7 +185,7 @@ def visualize_truss(
                 dir_y = np.sign(-Fy)
                 start_y = n.coords[1]-dir_y*arrow_len
                 ax.arrow(n.coords[0], start_y, 0, dir_y*arrow_len,
-                         fc='blue', ec='blue', head_width=head_width, head_length=head_length,
+                         fc='red', ec='red', head_width=head_width, head_length=head_length,
                          length_includes_head=True)
                 if show_load_labels:
                     ax.text(n.coords[0], start_y-dir_y*text_offset,
@@ -210,8 +201,8 @@ def visualize_truss(
                 continue
     
             # Member geometry
-            x1, y1 = m.node_start.coords[:2]
-            x2, y2 = m.node_end.coords[:2]
+            x1, y1 = m.node_start().coords[:2]
+            x2, y2 = m.node_end().coords[:2]
             L = math.hypot(x2 - x1, y2 - y1)
             if L < 1e-9:
                 continue
@@ -277,12 +268,9 @@ def visualize_truss(
             )
 
     # --- Plot reactions ---
-    if reactions:
-        for label, R in reactions.items():
-            if label not in nodes: 
-                continue
-            n = nodes[label]
-            Rx, Ry, Mz = R.get('Rx', 0.0), R.get('Ry', 0.0), R.get('Mz', 0.0)
+    if show_reactions:
+        for n in nodes.values():
+            Rx, Ry = n.R_x, n.R_y
     
             # Horizontal reaction arrow
             if Rx != 0:
@@ -308,23 +296,7 @@ def visualize_truss(
                 if show_reaction_labels:
                     ax.text(n.coords[0], n.coords[1]-vert_offset-text_offset,
                             f"Rᵧ={Ry:.1f} kN", color='black', fontsize=8*textscale, ha='center', va='top')
-    
-            # Moment reaction (Mz) at fixed supports
-            if Mz != 0:
-                # Draw a curved arrow representing moment
-                r = 0.05 * max(ax.get_xlim()[1]-ax.get_xlim()[0], ax.get_ylim()[1]-ax.get_ylim()[0])
-                theta = np.linspace(0, np.sign(Mz)*np.pi*0.8, 20)
-                x_circle = n.coords[0] + r*np.cos(theta)
-                y_circle = n.coords[1] + r*np.sin(theta)
-                ax.plot(x_circle, y_circle, color='purple', lw=2)
-                # Optional arrowhead at end
-                ax.arrow(x_circle[-2], y_circle[-2],
-                         x_circle[-1]-x_circle[-2], y_circle[-1]-y_circle[-2],
-                         shape='full', lw=0, length_includes_head=True,
-                         head_width=0.02*r, head_length=0.02*r, fc='purple', ec='purple')
-                if show_reaction_labels:
-                    ax.text(n.coords[0]+r, n.coords[1]+r,
-                            f"M={Mz:.1f} kNm", color='purple', fontsize=8*textscale, ha='left', va='bottom')
+
     
 
     # --- Colorbars ---

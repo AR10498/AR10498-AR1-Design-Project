@@ -6,7 +6,7 @@ import math
 # ==========================
 class Node:
     """
-    Node object with coordinates ()
+    Node object with coordinates (x, y, z)
     """
     def __init__(self, id, coords, label=None, condition="Pinned"):
         """
@@ -30,13 +30,15 @@ class Node:
 
 
 class Member:
-    def __init__(self, id, node_start, node_end):
+    def __init__(self, id, nodes, startnode, endnode):
         self.id = id
-        self.node_start = node_start
-        self.node_end = node_end
-        self.length = self.compute_member_length()
+        self.nodes = nodes
+        self.startnode = startnode
+        self.endnode = endnode
+        #self.length = self.compute_member_length()
+        self.compute_length()
         self.rotation = 0
-        self.name = "-".join(sorted([node_start.label, node_end.label]))
+        self.name = "-".join(sorted([startnode, endnode]))
         self.material = None
         # Standardized property keys
         self.properties = {}
@@ -44,23 +46,32 @@ class Member:
         # Uniformly distributed load per member (global axes)
         self.F_x = 0.0 # Fx = horizontal UDL
         self.F_y = 0.0 # Fy = vertical UDL (positive down)        
-        self.force = None  # will store solved force
-        self.moment = {}
+        self.force = 0.0  # will store solved force
+        self.moments = {}
+        self.stress = 0.0
+        self.utilisation = 0.0
+
+    def node_start(self):
+        return self.nodes[self.startnode]
+
+    def node_end(self):
+        return self.nodes[self.endnode]
 
     # --- Member lengths ---
-    def compute_member_length(self):
-        dx = self.node_end.coords[0] - self.node_start.coords[0]
-        dy = self.node_end.coords[1] - self.node_start.coords[1]
+    def compute_length(self):
+        dx = self.node_end().coords[0] - self.node_start().coords[0]
+        dy = self.node_end().coords[1] - self.node_start().coords[1]
         L = math.hypot(dx, dy)
         if L < 1e-12:
             L = 0.0
+        self.length = L
         return L
 
     def vector_from(self, node):
-        if node == self.node_start:
-            other = self.node_end
-        elif node == self.node_end:
-            other = self.node_start
+        if node == self.node_start():
+            other = self.node_end()
+        elif node == self.node_end():
+            other = self.node_start()
         else:
             return None
         dx = other.coords[0] - node.coords[0]
