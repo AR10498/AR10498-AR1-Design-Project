@@ -6,3 +6,7 @@ dependencies = [
     "ezdxf",
     "shapely"
 ]
+
+[tool.setuptools]
+py-modules = []
+
